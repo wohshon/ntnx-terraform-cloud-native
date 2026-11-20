@@ -178,6 +178,9 @@ build {
 provisioner "shell" {
     # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
     execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+    environment_vars = [
+        "DEBIAN_FRONTEND=noninteractive"
+      ]    
     inline = [
       "set -ex",
       "echo '--- WAITING FOR CLOUD-INIT TO FINISH ---'",
@@ -304,6 +307,9 @@ provisioner "shell" {
   # MANDATORY: Forces the use of Bash and sudo for the entire block
   # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
   execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+  environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive"
+    ]  
   inline = [
     # Stop on first error and print every command as it runs
     "set -ex", 
@@ -422,7 +428,9 @@ build {
   provisioner "shell" {
     # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
     execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
-
+    environment_vars = [
+        "DEBIAN_FRONTEND=noninteractive"
+    ]
     inline = [
       "set -ex",
       "echo '--- WAITING FOR CLOUD-INIT TO FINISH ---'",
