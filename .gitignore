@@ -1,0 +1,35 @@
+# Local .terraform directories
+**/.terraform/*
+
+# State files (including nested directories)
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform.tfstate.lock.info
+
+# Sensitive environment, keys, and plans
+env/.sensitive.env
+keys/**
+plans/**
+
+# Variable and override files (including nested directories)
+**/*.tfvars
+**/*.tfvars.json
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+*.logs
+
+
+# Packer & userdata files
+packer-ubuntu-nutanix/settings.auto.pkrvars.hcl
+packer-ubuntu-nutanix/nutanix-ubuntu.pkr.hcl
+userdata.yaml
+packer-ubuntu-nutanix/http/user-data
+ansible/hosts
+modules/ad_config/ad_setup.sh
+modules/nai/nai_prep.sh
+modules/nkp_setup/nkp_install.sh
+
+
+

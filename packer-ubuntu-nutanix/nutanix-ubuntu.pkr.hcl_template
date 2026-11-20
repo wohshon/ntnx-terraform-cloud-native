@@ -1,0 +1,523 @@
+packer {
+  required_plugins {
+    nutanix = {
+      source  = "github.com/nutanix-cloud-native/nutanix"
+      version = "~> 1.3" # Forces the newer v4 API needed for PC 7.6
+    }
+  }
+}
+
+variable "nkp_version" {
+  type        = string
+  description = "The version of NKP to install"
+  default     = "2.19.0"
+}
+variable "nkp_dir_version" {
+  type        = string
+  description = "The directory version format for NKP (e.g., 219)"
+  default     = "219"
+}
+
+
+variable "bastion_disk_size_gb" {
+  type    = number
+  default = 250
+}
+
+variable "generic_disk_size_gb" {
+  type    = number
+  default = 150
+}
+
+
+locals {
+  # Generates a date like: 2026-01-24-1245
+  # The format is YYYY-MM-DD-hhmm
+  timestamp = formatdate("YYYY-MM-DD-hhmm", timestamp())
+}
+
+# --- SOURCE 1: REGISTRY & GITLAB (150GB) ---
+source "nutanix" "ubuntu-server" {
+  nutanix_username = var.nutanix_username
+  nutanix_password = var.nutanix_password
+  nutanix_endpoint = var.nutanix_endpoint
+  nutanix_port     = var.nutanix_port
+  nutanix_insecure = var.nutanix_insecure
+  cluster_name     = var.nutanix_cluster
+  os_type          = "Linux"
+  
+  boot_wait = "15s"
+  boot_keygroup_interval = "1s"
+
+  vm_disks {
+    image_type = "ISO_IMAGE"
+    source_image_uuid = var.source_image
+  }
+
+  vm_disks {
+    image_type = "DISK"
+    disk_size_gb = var.generic_disk_size_gb
+  }
+
+  vm_nics {
+    subnet_name = var.nutanix_subnet
+  }
+
+  # image_name = "ubuntu-24-04-pro-bastion-${local.timestamp}"
+  memory_mb    = 8192
+  cpu          = 4
+
+  force_deregister = true
+
+
+  boot_command = [
+    "<esc><wait>",
+    "e<wait>",
+    "<down><down><down>",
+    "<end><bs><bs><bs><bs><wait>",
+    " autoinstall ds=nocloud;s=/cdrom/ ---<wait>",
+    "<f10>"
+  ]
+
+  # user_data = base64encode(file("./http/user-data"))
+
+  cd_label = "cidata"
+  cd_content = {
+    "/meta-data" = ""
+    "/user-data" = file("./http/user-data")
+  }
+
+  shutdown_command  = "echo '_VM_USER_PASSWORD_' | sudo -S shutdown -P now"
+  shutdown_timeout = "2m"
+  ssh_username = "_VM_USER_"
+  ssh_password = "_VM_USER_PASSWORD_"
+  ssh_timeout  = "30m"
+  ssh_handshake_attempts = 500
+}
+
+# --- SOURCE 2: BASTION (Custom Size) ---
+source "nutanix" "bastion" {
+  nutanix_username = var.nutanix_username
+  nutanix_password = var.nutanix_password
+  nutanix_endpoint = var.nutanix_endpoint
+  nutanix_port     = var.nutanix_port
+  nutanix_insecure = var.nutanix_insecure
+  cluster_name     = var.nutanix_cluster
+  os_type          = "Linux"
+  
+  boot_wait = "15s"
+  boot_keygroup_interval = "1s"
+  
+  vm_disks {
+    image_type = "ISO_IMAGE"
+    source_image_uuid = var.source_image
+  }
+
+  vm_disks {
+    image_type   = "DISK"
+    disk_size_gb = var.bastion_disk_size_gb
+  }
+
+  vm_nics {
+    subnet_name = var.nutanix_subnet
+  }
+
+  memory_mb = 8192
+  cpu       = 4
+  force_deregister = true
+
+  boot_command = [
+    "<esc><wait>",
+    "e<wait>",
+    "<down><down><down>",
+    "<end><bs><bs><bs><bs><wait>",
+    " autoinstall ds=nocloud;s=/cdrom/ ---<wait>",
+    "<f10>"
+  ]
+
+  # user_data = base64encode(file("./http/user-data"))
+  cd_label = "cidata"
+  cd_content = {
+    "/meta-data" = ""
+    "/user-data" = file("./http/user-data")
+  }
+
+  shutdown_command = "echo '_VM_USER_PASSWORD_' | sudo -S shutdown -P now"
+  shutdown_timeout = "2m"
+  ssh_username = "_VM_USER_"
+  ssh_password = "_VM_USER_PASSWORD_"
+  ssh_timeout  = "30m"
+  ssh_handshake_attempts = 500
+}
+
+
+## registry
+
+# --- HARBOR REGISTRY BUILD ---
+build {
+  source "nutanix.ubuntu-server" {
+    name       = "harbor-registry"
+    image_name = "harbor-registry-prod-${local.timestamp}"
+  }
+  # copy ssh keys to VM
+  provisioner "file" {
+    sources     = ["../_SSH_KEY_PUBLIC_REGISTRY_VM_PATH_/_SSH_KEY_PUBLIC_REGISTRY_VM_FILE_", "../_SSH_KEY_PRIVATE_REGISTRY_VM_PATH_/_SSH_KEY_PRIVATE_REGISTRY_VM_FILE_"]
+    destination = "/tmp/"
+  }
+
+  provisioner "file" {
+    source      = "../_TLS_KEY_PUBLIC_REGISTRY_VM_PATH_/_TLS_KEY_PUBLIC_REGISTRY_VM_FILE_"
+    destination = "/tmp/harbor.crt"
+  }
+
+  provisioner "file" {
+    source      = "../_TLS_KEY_PRIVATE_REGISTRY_VM_PATH_/_TLS_KEY_PRIVATE_REGISTRY_VM_FILE_"
+    destination = "/tmp/harbor.key"
+  }
+
+provisioner "shell" {
+    # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
+    execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+    inline = [
+      "set -ex",
+      "echo '--- WAITING FOR CLOUD-INIT TO FINISH ---'",
+      "cloud-init status --wait",
+
+      "sudo hostnamectl set-hostname _PRIVATE_REGISTRY_NAME_",
+      "echo '127.0.0.1 _PRIVATE_REGISTRY_NAME_' | sudo tee -a /etc/hosts",
+    
+      "echo '--- 1. INSTALL TOOLS & DOCKER ---'",
+      # "sudo systemctl stop apt-daily.service apt-daily-upgrade.service || true",
+      "sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+      "sudo systemctl mask apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+      "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do echo 'Waiting for apt lock...'; sleep 5; done",
+      
+      "export DEBIAN_FRONTEND=noninteractive",
+      "sudo apt-get update",
+      "sudo apt-get upgrade -y",
+      "sudo apt-get install -y git curl wget gpg bash-completion ca-certificates",
+      "sudo install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes",
+      "source /etc/os-release",
+      # "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",     
+      "sudo apt-get update",
+      # "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin",
+      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+      
+      "sudo usermod -aG docker _VM_USER_",
+      "sudo systemctl enable docker",
+
+      "echo '--- 2. HARBOR INSTALL ---'",
+      "sudo mkdir -p /data/cert",
+      "sudo cp /tmp/harbor.crt /data/cert/_PRIVATE_REGISTRY_NAME_.crt",
+      "sudo mv /tmp/harbor.key /data/cert/_PRIVATE_REGISTRY_NAME_.key",
+      "cd /tmp && wget _PRIVATE_REGISTRY_INSTALLER_DOWNLOAD_URL_",
+      "sudo tar xvzf _PRIVATE_REGISTRY_INSTALLER_BUNDLE_ -C /opt",
+      "cd /opt/harbor",
+      "sudo cp harbor.yml.tmpl harbor.yml",
+      "sudo sed -i 's/hostname: .*/hostname: _PRIVATE_REGISTRY_NAME_/' harbor.yml",
+      "sudo sed -i 's|certificate: /your/certificate/path|certificate: /data/cert/_PRIVATE_REGISTRY_NAME_.crt|' harbor.yml",
+      "sudo sed -i 's|private_key: /your/private/key/path|private_key: /data/cert/_PRIVATE_REGISTRY_NAME_.key|' harbor.yml",
+      "sudo -E ./install.sh",
+
+      "echo '--- 3. CONFIGURE PROJECT ---'",
+      "for i in {1..20}; do if [ $(sudo docker ps | grep harbor-core | grep -c healthy) -eq 1 ]; then break; fi; sleep 10; done",
+      "curl -s -k -u \"admin:Harbor12345\" -X POST -H \"Content-Type: application/json\" \"https://127.0.0.1/api/v2.0/projects\" -d '{\"project_name\": \"nkp\", \"metadata\": {\"public\": \"true\"}}'",
+      
+      "echo '--- 4. CREATE SYSTEMD SERVICE (KILL EXIT 128) ---'",
+      # We set restart to 'no' in compose because the systemd service handles the logic now
+      "sudo sed -i 's/restart: .*/restart: no/g' /opt/harbor/docker-compose.yml",
+      "sudo tee /etc/systemd/system/harbor.service <<EOF",
+      "[Unit]",
+      "Description=Harbor Registry",
+      "After=docker.service network-online.target",
+      "Requires=docker.service",
+      "",
+      "[Service]",
+      "Type=simple",
+      "WorkingDirectory=/opt/harbor",
+      "ExecStartPre=/bin/sleep 30",
+      "ExecStart=/usr/bin/docker compose up",
+      "ExecStop=/usr/bin/docker compose stop",
+      "Restart=on-failure",
+      "",
+      "[Install]",
+      "WantedBy=multi-user.target",
+      "EOF",
+
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable harbor.service",
+
+      "echo '--- INSTALLING REGISTRY CERT INTO SYSTEM TRUST ---'",
+      "sudo cp /tmp/harbor.crt /usr/local/share/ca-certificates/registry-server.crt",
+      "sudo chmod 644 /usr/local/share/ca-certificates/registry-server.crt",
+      "sudo update-ca-certificates",
+
+      "echo '--- INSTALLING REGISTRY CERT INTO DOCKER TRUST ---'",
+      "sudo mkdir -p /etc/docker/certs.d/_PRIVATE_REGISTRY_NAME_",
+      "sudo mv /tmp/harbor.crt /etc/docker/certs.d/registry.ntnxlab.local/ca.crt",
+      "sudo chmod 644 /etc/docker/certs.d/_PRIVATE_REGISTRY_NAME_/ca.crt",
+      "sudo systemctl restart docker",
+
+      "echo '--- 5. FINAL CLEANUP ---'",
+      "cd /opt/harbor && sudo docker compose stop",
+      "sudo sed -i '/_PRIVATE_REGISTRY_NAME_/d' /etc/hosts",
+      "rm -f /tmp/harbor-offline-installer-v2.10.0.tgz",
+      "sudo hostname registry",
+      "sync && sleep 5"
+    ]
+  }
+}
+
+
+## bastion
+build {
+  source "nutanix.bastion" {
+    name = "bastion"
+    image_name = "bastion-host-prod-${local.timestamp}" # ADD THIS LINE    
+  }
+# 1. Upload the PRIVATE key so the FOR BASTION VM 
+provisioner "file" {
+  source      = "../_SSH_KEY_PRIVATE_BASTION_VM_PATH_/_SSH_KEY_PRIVATE_REGISTRY_VM_FILE_"
+  destination = "/tmp/_SSH_KEY_PRIVATE_BASTION_VM_FILE_"
+}
+
+# 2. Upload the PUBLIC key so you can still SSH in
+provisioner "file" {
+  source      = "../_SSH_KEY_PUBLIC_BASTION_VM_PATH_/_SSH_KEY_PUBLIC_BASTION_VM_FILE_"
+  destination = "/tmp/_SSH_KEY_PUBLIC_BASTION_VM_FILE_"
+}
+
+provisioner "file" {
+  sources     = ["../_TLS_KEY_PUBLIC_GITLAB_VM_PATH_/_TLS_KEY_PUBLIC_GITLAB_VM_FILE_"]
+  destination = "/tmp/"
+}
+
+provisioner "file" {
+  sources     = ["../_TLS_KEY_PUBLIC_REGISTRY_VM_PATH_/_TLS_KEY_PUBLIC_REGISTRY_VM_FILE_"]
+  destination = "/tmp/harbor.crt"
+}
+
+
+provisioner "shell" {
+  # MANDATORY: Forces the use of Bash and sudo for the entire block
+  # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
+  execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+  inline = [
+    # Stop on first error and print every command as it runs
+    "set -ex", 
+    
+    "echo '--- WAITING FOR CLOUD-INIT TO FINISH ---'",
+    "cloud-init status --wait",
+    
+    "echo '--- HOSTNAME ---'",
+    "sudo hostnamectl set-hostname bastion.ntnxlab.local",
+    "echo '127.0.0.1 bastion.ntnxlab.local' | sudo tee -a /etc/hosts",
+  
+    "echo '--- KILLING AUTO-UPDATES ---'",
+    #"sudo systemctl stop apt-daily.service apt-daily-upgrade.service || true",
+    #"sudo systemctl mask apt-daily.service apt-daily-upgrade.service || true",
+    "sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+    "sudo systemctl mask apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+    "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do echo 'Waiting for apt lock...'; sleep 5; done",
+
+    "echo '--- INSTALLING BASE TOOLS ---'",
+    "export DEBIAN_FRONTEND=noninteractive",  
+    #"sudo apt-get update && sudo apt-get install -y git curl wget gpg bash-completion ca-certificates yq",
+
+    "sudo apt-get update",
+    "sudo apt-get upgrade -y",
+    "sudo apt-get install -y git curl wget gpg bash-completion ca-certificates kubectx",
+    
+    "echo '--- INSTALLING HELM ---'",
+    # "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash",
+    "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash", 
+
+    "echo '--- INSTALLING DOCKER ---'",
+    "sudo install -m 0755 -d /etc/apt/keyrings",
+    "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes",
+    "source /etc/os-release",
+    # "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+    "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+
+    "sudo apt-get update",
+    # "sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
+    "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+    "sudo usermod -aG docker _DOCKER_USER_",
+
+    "echo '--- INSTALLING KUBECTL & K9S ---'",
+    # Get latest stable version string
+    "K8S_VERSION=$(curl -L -s https://dl.k8s.io/release/stable.txt)",
+    "curl -fSL -o /usr/local/bin/kubectl \"https://dl.k8s.io/release/$${K8S_VERSION}/bin/linux/amd64/kubectl\"",
+    "sudo chmod +x /usr/local/bin/kubectl",
+    # Get latest k9s tag from GitHub API
+    "K9S_VERSION=$(curl -s https://api.github.com/repos/derailed/k9s/releases/latest | grep tag_name | cut -d '\"' -f 4)",
+    "curl -fSL \"https://github.com/derailed/k9s/releases/download/$${K9S_VERSION}/k9s_Linux_amd64.tar.gz\" | tar -xz -C /usr/local/bin k9s",
+    "sudo chmod +x /usr/local/bin/k9s",
+
+    "echo '--- INSTALLING NKP ---'",
+    # Note: Using strip-components if the tarball has a nested folder
+    # simplify the path
+    #"curl -fSL _HOSTING_URL_/_PACKER_NKP_DOWNLOAD_PATH__${var.nkp_dir_version}/nkp_v${var.nkp_version}_linux_amd64.tar.gz | tar -xz -C /usr/local/bin --strip-components=1 */nkp || curl -fSL http://10.42.194.11/users/wohshon/nkp_${var.nkp_dir_version}/nkp_v${var.nkp_version}_linux_amd64.tar.gz | tar -xz -C /usr/local/bin nkp",    "sudo chmod +x /usr/local/bin/nkp",
+    #_HOSTING_URL_/_NKP_HOSTING_PATH_
+    "curl -fSL _HOSTING_URL_/_NKP_HOSTING_PATH_/nkp_v${var.nkp_version}_linux_amd64.tar.gz | tar -xz -C /usr/local/bin --strip-components=1 */nkp || curl -fSL _HOSTING_URL_/_NKP_HOSTING_PATH_/nkp_v${var.nkp_version}_linux_amd64.tar.gz | tar -xz -C /usr/local/bin nkp",    "sudo chmod +x /usr/local/bin/nkp",
+    "echo '--- INSTALLING KUSTOMIZE ---'",
+    # Download and run the official install script to the current directory
+    "curl -s \"https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh\" | bash",
+    # Move the binary to /usr/local/bin and ensure it is executable
+    "sudo mv kustomize /usr/local/bin/kustomize",
+    "sudo chmod +x /usr/local/bin/kustomize",
+
+    "echo '--- BASHRC FOR _VM_USER_ ---'",
+    # "sudo -u _VM_USER_ bash -c 'cat <<EOF >> _NKP_BASTION_WORKING_DIR_/.bashrc\nsource <(kubectl completion bash)\nalias k=kubectl\ncomplete -o default -F __start_kubectl k\nEOF'",
+    # add in kx kn 
+    # no damage but kx kn autocomplete broker
+    #"sudo -u _VM_USER_ bash -c 'cat <<EOF >> _NKP_BASTION_WORKING_DIR_/_VM_USER_/.bashrc\nif ! shopt -oq posix; then\n  if [ -f /usr/share/bash-completion/bash_completion ]; then\n    . /usr/share/bash-completion/bash_completion\n  elif [ -f /etc/bash_completion ]; then\n    . /etc/bash_completion\n  fi\nfi\n\nsource <(kubectl completion bash)\nalias k=kubectl\ncomplete -o default -F __start_kubectl k\n\nalias kx=\"kubectx\"\nalias kn=\"kubens\"\n\nif type _completion_loader &>/dev/null; then\n  _completion_loader kubectx 2>/dev/null\n  _completion_loader kubens 2>/dev/null\n  eval \"$(complete -p kubectx 2>/dev/null | sed \"s/ kubectx$/ kx/\")\"\n  eval \"$(complete -p kubens 2>/dev/null | sed \"s/ kubens$/ kn/\")\"\nfi\nEOF'",    "sudo -u _VM_USER_ mkdir -p _NKP_BASTION_WORKING_DIR_/.ssh",
+    # fix error
+    "sudo -u _VM_USER_ bash -c 'cat <<\"EOF\" >> _NKP_BASTION_WORKING_DIR_/.bashrc\n\nsource <(kubectl completion bash)\nalias k=kubectl\ncomplete -o default -F __start_kubectl k\n\nalias kx=\"kubectx\"\nalias kn=\"kubens\"\n\n_completion_loader kubectx 2>/dev/null\n_completion_loader kubens 2>/dev/null\ncomplete -F _kube_contexts kx 2>/dev/null\ncomplete -F _kube_namespaces kn 2>/dev/null\nEOF'",
+    "sudo chmod 700 _NKP_BASTION_WORKING_DIR_/.ssh",
+    "cat /tmp/id_ed25519.pub | sudo -u _VM_USER_ tee -a _NKP_BASTION_WORKING_DIR_/.ssh/authorized_keys > /dev/null",
+    "sudo mv /tmp/_SSH_KEY_PRIVATE_BASTION_VM_FILE_ _NKP_BASTION_WORKING_DIR_/.ssh/_SSH_KEY_PRIVATE_BASTION_VM_FILE_",
+    "sudo mv /tmp/_SSH_KEY_PUBLIC_BASTION_VM_FILE_ _NKP_BASTION_WORKING_DIR_/.ssh/_SSH_KEY_PUBLIC_BASTION_VM_FILE_",
+    "sudo chown -R _VM_USER_:_VM_USER_ _NKP_BASTION_WORKING_DIR_/.ssh",
+    "sudo chmod 600 _NKP_BASTION_WORKING_DIR_/.ssh/_SSH_KEY_PRIVATE_BASTION_VM_FILE_",
+    "sudo chmod 600 _NKP_BASTION_WORKING_DIR_/.ssh/authorized_keys",
+    "sudo -u _VM_USER_ bash -c 'ssh-keyscan github.com >> _NKP_BASTION_WORKING_DIR_/.ssh/known_hosts 2>/dev/null'",
+
+    "echo '--- INSTALLING CERTs INTO SYSTEM TRUST ---'",
+    "sudo cp /tmp/harbor.crt /usr/local/share/ca-certificates/registry-server.crt",
+    "sudo cp /tmp/gitlab.ntnxlab.local.crt /usr/local/share/ca-certificates/gitlab.ntnxlab.local.crt",
+    "sudo chmod 644 /usr/local/share/ca-certificates/registry-server.crt",
+    "sudo chmod 644 /usr/local/share/ca-certificates/gitlab.ntnxlab.local.crt",
+    "sudo update-ca-certificates",
+
+    "echo '--- INSTALLING REGISTRY CERT INTO DOCKER TRUST ---'",
+    "sudo mkdir -p /etc/docker/certs.d/registry.ntnxlab.local",
+    "sudo cp /tmp/harbor.crt /etc/docker/certs.d/registry.ntnxlab.local/ca.crt",
+    "sudo chmod 644 /etc/docker/certs.d/registry.ntnxlab.local/ca.crt",
+    "sudo systemctl restart docker",
+
+    "echo '--- VERIFYING ---'",
+    "ls -la /usr/local/bin/kubectl /usr/local/bin/k9s /usr/local/bin/nkp /usr/local/bin/kustomize",
+    "docker --version",
+    "sudo hostname bastion",
+    "sync"
+  ]
+}
+}
+
+## gitlab
+build {
+  source "nutanix.ubuntu-server" {
+    name       = "gitlab"
+    image_name = "gitlab-prod-${local.timestamp}"
+  }
+
+  provisioner "file" {
+    sources     = ["../_TLS_KEY_PUBLIC_GITLAB_VM_PATH_/_TLS_KEY_PUBLIC_GITLAB_VM_FILE_", "../_TLS_KEY_PRIVATE_GITLAB_VM_PATH_/_TLS_KEY_PRIVATE_GITLAB_VM_FILE_","../_TLS_KEY_PUBLIC_REGISTRY_VM_PATH_/_TLS_KEY_PUBLIC_REGISTRY_VM_FILE_"]
+    destination = "/tmp/"
+  }
+
+  provisioner "shell" {
+    # execute_command = "echo 'packer' | {{ .Vars }} sudo -E -S bash '{{ .Path }}'"
+    execute_command = "{{ .Vars }} sudo -E bash '{{ .Path }}'"
+
+    inline = [
+      "set -ex",
+      "echo '--- WAITING FOR CLOUD-INIT TO FINISH ---'",
+      "cloud-init status --wait",      
+      "export DEBIAN_FRONTEND=noninteractive",
+
+      "echo '--- HOSTNAME ---'",
+      "sudo hostnamectl set-hostname gitlab.ntnxlab.local",
+      "echo '127.0.0.1 gitlab.ntnxlab.local' | sudo tee -a /etc/hosts",
+
+    "echo '--- KILLING AUTO-UPDATES ---'",
+    # "sudo systemctl stop apt-daily.service apt-daily-upgrade.service || true",
+    # "sudo systemctl mask apt-daily.service apt-daily-upgrade.service || true",
+    "sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+    "sudo systemctl mask apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+
+    "while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do echo 'Waiting for apt lock...'; sleep 5; done",
+
+      "echo '--- INSTALLING BASE TOOLS ---'",
+      "export DEBIAN_FRONTEND=noninteractive",
+      #"sudo apt-get update && sudo apt-get install -y git curl wget gpg bash-completion ca-certificates",
+      "sudo apt-get update",
+      "sudo apt-get upgrade -y",
+      "sudo apt-get install -y git curl wget gpg bash-completion ca-certificates",
+      
+      "echo '--- INSTALLING HELM ---'",
+      "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash",
+      # curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash, 
+
+      "echo '--- INSTALLING DOCKER ---'",
+      "sudo install -m 0755 -d /etc/apt/keyrings",
+      "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes",
+      "source /etc/os-release",
+      # "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+      "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null",
+      
+      "sudo apt-get update",
+      # "sudo apt-get install -y docker-ce docker-ce-cli containerd.io",
+      "sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+
+      "sudo usermod -aG docker _DOCKER_USER_",
+
+      "echo '--- INSTALLING KUBECTL & K9S ---'",
+      "curl -fSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v1.31.0/bin/linux/amd64/kubectl",
+      "sudo chmod +x /usr/local/bin/kubectl",
+      "curl -fSL https://github.com/derailed/k9s/releases/download/v0.32.7/k9s_Linux_amd64.tar.gz | tar -xz -C /usr/local/bin k9s",
+      "sudo chmod +x /usr/local/bin/k9s",
+
+      "echo '--- BASE PACKAGES ---'",
+      # "sudo systemctl stop apt-daily.service apt-daily-upgrade.service || true",
+      "sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true",
+      
+      "sudo apt-get update",
+      "sudo apt-get install -y curl openssh-server ca-certificates tzdata perl",
+
+      "echo '--- GITLAB SSL SETUP ---'",
+      "sudo mkdir -p /etc/gitlab/ssl",
+      "sudo cp /tmp/gitlab.ntnxlab.local.key /etc/gitlab/ssl/gitlab.ntnxlab.local.key",
+      "sudo cp /tmp/gitlab.ntnxlab.local.crt /etc/gitlab/ssl/gitlab.ntnxlab.local.crt",
+      "sudo chmod 600 /etc/gitlab/ssl/gitlab.ntnxlab.local.*",
+
+      "echo '--- INSTALL GITLAB REPO ---'",
+      "curl -s https://packages.gitlab.com/install/repositories/gitlab/gitlab-ee/script.deb.sh | sudo bash",
+
+      "echo '--- INSTALL GITLAB EE ---'",
+      "sudo EXTERNAL_URL=\"https://gitlab.ntnxlab.local\" apt-get install -y gitlab-ee",
+
+      "echo '--- CONFIGURE GITLAB SSL ---'",
+      "sudo tee -a /etc/gitlab/gitlab.rb <<EOF",
+      "external_url 'https://gitlab.ntnxlab.local'",
+      "nginx['redirect_http_to_https'] = true",
+      "nginx['ssl_certificate'] = \"/etc/gitlab/ssl/gitlab.ntnxlab.local.crt\"",
+      "nginx['ssl_certificate_key'] = \"/etc/gitlab/ssl/gitlab.ntnxlab.local.key\"",
+      "EOF",
+
+      "echo '--- RECONFIGURE GITLAB ---'",
+      "sudo gitlab-ctl reconfigure",
+      "sudo gitlab-ctl restart nginx",
+
+      "echo '--- INSTALLING REGISTRY CERT INTO SYSTEM TRUST ---'",
+      "sudo cp /tmp/registry-server.crt /usr/local/share/ca-certificates/registry-server.crt",
+      "sudo chmod 644 /usr/local/share/ca-certificates/registry-server.crt",
+      "sudo update-ca-certificates",
+
+      "echo '--- INSTALLING REGISTRY CERT INTO DOCKER TRUST ---'",
+      "sudo mkdir -p /etc/docker/certs.d/_PRIVATE_REGISTRY_NAME_",
+      "sudo cp /tmp/registry-server.crt /etc/docker/certs.d/_PRIVATE_REGISTRY_NAME_/ca.crt",
+      "sudo chmod 644 /etc/docker/certs.d/_PRIVATE_REGISTRY_NAME_/ca.crt",
+      "sudo systemctl restart docker",
+
+      "echo '--- ROOT PASSWORD LOCATION ---'",
+      "sudo test -f /etc/gitlab/initial_root_password && sudo cat /etc/gitlab/initial_root_password || true",
+    
+      "echo '--- FINALIZE ---'",
+      "sync"
+    ]
+  }
+}

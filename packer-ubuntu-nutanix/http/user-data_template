@@ -1,0 +1,33 @@
+#cloud-config
+autoinstall:
+  version: 1
+  refresh-installer:
+    update: false
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  identity:
+    hostname: ubuntu-pro-bastion
+    username: _VM_USER_
+    # Linux SHA-512 crypt hash.
+    # openssl passwd -6 "YourNewPasswordHere"    
+    password: "_VM_USER_PWD_HASH_"
+
+  storage:
+    layout:
+      name: direct
+
+  ssh:
+    install-server: true
+    allow-pw: _PACKER_USER_DATA_ALLOW_SSH_PW_AUTH_
+    authorized-keys:
+      - "_SSH_PUBLIC_GENERIC_KEY_"
+
+  user-data:
+    ssh_pwauth: _PACKER_USER_DATA_ALLOW_SSH_PW_AUTH_
+
+  late-commands:
+    - curtin in-target -- sh -c "echo 'root:_PACKER_USER_DATA_ROOT_PASSWD_' | chpasswd"
+    - curtin in-target -- sh -c "echo '_VM_USER_ ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/_VM_USER_ && chmod 0440 /etc/sudoers.d/_VM_USER_"
+    - curtin in-target -- sh -c "if [ -f /etc/ssh/sshd_config.d/50-cloud-init.conf ]; then sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config.d/50-cloud-init.conf; fi"

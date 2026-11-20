@@ -1,0 +1,164 @@
+exec > ${bastion_working_dir}/nai_prep.log 2>&1
+
+  WEBHOOK_URL="${slack_webhook_url}"
+
+  send_notification() {
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ]; then
+      MESSAGE="✅ *Success:* NAI Bundle downloaded and pushed to Registry on Bastion (${bastion_ip}). Ready for cluster deployment!"
+    else
+      MESSAGE="❌ *Failed:* NAI Prep (download/push) crashed on Bastion (${bastion_ip}). Check ${bastion_working_dir}/nai_prep.log"
+    fi
+    curl -s -X POST -H "Content-type: application/json" \
+      --data "{\"cluster\": \"${cluster_name}\", \"message\": \"$MESSAGE\"}" \
+      $WEBHOOK_URL
+  }
+
+  trap send_notification EXIT
+  set -e
+
+  # ----------------------------------------------------
+  # STEP 1: LISTEN FOR GIT REPO (PULLED BY NKP TASK)
+  # ----------------------------------------------------
+  GIT_DIR="${bastion_working_dir}/${bastion_installation_scripts_dir}"
+  NAI_DIR="$GIT_DIR/${bastion_env}/nai"
+
+  echo "Waiting for NKP task to clone Git repository at $GIT_DIR..."
+
+  # while [ ! -d "$GIT_DIR" ]; do
+  while [ ! -d "$NAI_DIR" ]; do
+    echo "Git directory not found yet. Sleeping 10s..."
+    sleep 10
+  done
+  echo "Git repository detected at $GIT_DIR!"
+
+  # ----------------------------------------------------
+  # STEP 2: DOWNLOAD NAI BUNDLE & HELM CHART
+  # ----------------------------------------------------
+  #NAI_DIR="${bastion_working_dir}/nai-downloads"
+  # mkdir -p $NAI_DIR
+  cd $NAI_DIR
+
+  NAI_BUNDLE="${nai_bundle_name}"
+  NAI_HELM="${nai_helm_chart_tar}"
+
+  echo "Downloading NAI Helm Chart ($NAI_HELM)..."
+  curl -Lo $NAI_HELM --retry 10 --retry-delay 5 "${nai_helm_chart_download_url}"
+
+  echo "Downloading NAI Bundle ($NAI_BUNDLE)..."
+  curl -Lo $NAI_BUNDLE --retry 10 --retry-delay 5 "${nai_bundle_download_url}"
+
+  # ----------------------------------------------------
+  # STEP 3: WAIT FOR HARBOR REGISTRY TO BE READY
+  # ----------------------------------------------------
+  echo "Waiting for Harbor Registry to respond..."
+  until curl -u '${private_registry_user}:${private_registry_token}' -k -s -f ${private_registry_url}/v2/ > /dev/null 2>&1; do
+    echo "Harbor registry is not reachable yet. Sleeping 15s..."
+    sleep 15
+  done
+  echo "Harbor Registry is online!"
+
+  # ----------------------------------------------------
+  # STEP 4: CREATE PROJECT AND PUSH IMAGES/CHARTS
+  # ----------------------------------------------------
+  echo "Creating 'nai' project in Harbor..."
+  curl -u '${private_registry_user}:${private_registry_token}' \
+       -X POST \
+       -H "Content-Type: application/json" \
+       -d '{"project_name": "nai", "public": false, "storage_limit": -1}' \
+       '${private_registry_url}/api/v2.0/projects' -k || true
+
+  echo "Logging into Harbor..."
+  docker login -u ${private_registry_user} -p ${private_registry_token} ${private_registry_name}
+  helm registry login -u ${private_registry_user} -p ${private_registry_token} ${private_registry_name}
+
+  echo "Extracting and pushing Helm charts..."
+  mkdir -p helm_extracted
+  tar -xvf $NAI_HELM -C helm_extracted
+  cd helm_extracted
+
+  helm push gateway-crds-helm-v1.8.1.tgz oci://${private_registry_name}/nai
+  helm push gateway-helm-v1.8.1.tgz oci://${private_registry_name}/nai
+  helm push kserve-crd-v0.19.0.tgz oci://${private_registry_name}/nai
+  helm push kserve-resources-v0.19.0.tgz oci://${private_registry_name}/nai
+  helm push kserve-llmisvc-crd-v0.19.0.tgz oci://${private_registry_name}/nai
+  helm push kserve-llmisvc-resources-v0.19.0.tgz oci://${private_registry_name}/nai
+  helm push opentelemetry-operator-0.114.1.tgz oci://${private_registry_name}/nai
+  helm push lws-0.8.0.tgz oci://registry.ntnxlab.local/nai
+  helm push nai-core-2.8.1.tgz oci://${private_registry_name}/nai
+  helm push nai-operators-2.8.1.tgz oci://${private_registry_name}/nai
+
+  # Return to the NAI dir for the image push
+  cd $NAI_DIR
+
+  echo "Making custom push script executable..."
+  # PUSH_SCRIPT="$GIT_DIR/hpoc/nai/push-images-to-registry.sh"
+  PUSH_SCRIPT="$GIT_DIR/${bastion_env}/nai/push-images-to-registry.sh"
+
+  chmod +x $PUSH_SCRIPT
+
+  echo "Pushing NAI bundles to local registry using custom script..."
+  $PUSH_SCRIPT ${private_registry_name} nai $NAI_DIR/$NAI_BUNDLE
+
+  # ----------------------------------------------------
+  # STEP 5: REPLICATE CLUSTER SCRIPT
+  # ----------------------------------------------------
+  echo "Navigating to environment scripts directory..."
+  cd $GIT_DIR/${bastion_env}
+
+  echo "Generating nai-cluster.sh configuration..."
+  ./replicate_cluster_script.sh \
+    -f dev.sh \
+    --name nai-cluster1 \
+    --cp-ip ${dhcp_prefix}.160 \
+    --lb-range ${dhcp_prefix}.161-${dhcp_prefix}.164 \
+    --workers 4 \
+    --vcpus 48 \
+    --disk 150 \
+    --memory 64
+
+  if [ ! -f "nai-cluster1.sh" ]; then
+    echo "ERROR: nai-cluster1.sh was not generated!"
+    exit 1
+  fi
+  echo "nai-cluster1.sh successfully created!"
+
+  # ----------------------------------------------------
+  # STEP 6: WAIT FOR MGMT CLUSTER & APPLY NAI CLUSTER
+  # ----------------------------------------------------
+  KUBECONFIG_PATH="$GIT_DIR/${bastion_env}/${nkp_mgmt_cluster_name}.conf"
+  echo "Waiting for management cluster kubeconfig at $KUBECONFIG_PATH..."
+  until [ -f "$KUBECONFIG_PATH" ]; do
+    echo "Kubeconfig file not found yet. Sleeping 15s..."
+    sleep 15
+  done
+
+  export KUBECONFIG="$KUBECONFIG_PATH"
+
+  echo "Waiting for NKP Management Cluster API to be ready..."
+  until kubectl get nodes > /dev/null 2>&1; do
+    echo "Management cluster API not responding yet. Sleeping 15s..."
+    sleep 15
+  done
+  echo "NKP Management Cluster is ready!"
+
+  WORKSPACE_NAME="${nkp_workspace_name}"
+  WORKSPACE_NAMESPACE="${nkp_workspace_namespace}"
+
+  echo "Waiting for workspace '$WORKSPACE_NAME' namespace '$WORKSPACE_NAMESPACE'..."
+
+  until kubectl get namespace "$WORKSPACE_NAMESPACE" > /dev/null 2>&1; do
+    echo "Workspace namespace not created yet. Sleeping 15s..."
+    sleep 15
+  done
+
+  echo "Workspace '$WORKSPACE_NAME' is available in namespace '$WORKSPACE_NAMESPACE'."
+
+  echo "Applying NAI cluster configuration..."
+  chmod +x ./nai-cluster1.sh
+  ./nai-cluster1.sh > nai.yaml
+  kubectl apply -f nai.yaml
+  echo "NAI cluster manifest applied successfully!"
+
+
+  echo "NAI Preparation Complete!"

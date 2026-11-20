@@ -1,0 +1,158 @@
+# modules/nkp_setup/nkp_install.sh.tftpl
+exec > ${bastion_working_dir}/nkp_full_setup.log 2>&1
+
+# --- NOTIFICATION SETUP ---
+WEBHOOK_URL="${slack_webhook_url}"
+
+send_notification() {
+  EXIT_CODE=$?
+  if [ $EXIT_CODE -eq 0 ]; then
+    MESSAGE="✅ *Success:* NKP Full Setup (Prereq + Cluster) completed on Bastion VM (${bastion_ip})."
+  else
+    MESSAGE="❌ *Failed:* NKP Setup crashed on Bastion VM (${bastion_ip}). SSH in and check nkp_full_setup.log"
+  fi
+  curl -s -X POST -H "Content-type: application/json" \
+    --data "{\"cluster\": \"${cluster_name}\",\"password\": \"${nutanix_password}\",\"prefix\": \"${dhcp_prefix}\", \"message\": \"$MESSAGE\"}" \
+    $WEBHOOK_URL
+}
+
+trap send_notification EXIT
+set -e 
+
+# ==========================================
+# PHASE 1: PREREQ SETUP
+# ==========================================
+echo "Starting Phase 1: Prereq Setup..."
+cd ${bastion_working_dir}
+
+echo "Cleaning up old directories..."
+rm -rf ${bastion_working_dir}/${bastion_installation_scripts_dir}
+rm -rf ${bastion_working_dir}/${bastion_bundle_extraction_dir}
+
+git clone ${bastion_git_endpoint}
+cd ${bastion_installation_scripts_dir}/
+git checkout ${bastion_git_branch}
+cd ${bastion_env}/
+
+export NKP_BUNDLE=${bastion_bundle_name} 
+mkdir -p ${bastion_working_dir}/${bastion_bundle_extraction_dir}
+curl -C - -Lo $NKP_BUNDLE --retry 10 --retry-delay 5 ${bastion_bundle_download_url}/$NKP_BUNDLE
+
+tar -xvzf $NKP_BUNDLE -C ${bastion_working_dir}/${bastion_bundle_extraction_dir}
+rm $NKP_BUNDLE
+
+export REGISTRY_MIRROR_URL=${private_registry_url}/nkp
+export REGISTRY_URL=${private_registry_url}
+export REGISTRY_MIRROR_PASSWORD=${private_registry_token}
+export REGISTRY_MIRROR_USERNAME=${private_registry_user}
+export CERT_DIR=${bastion_working_dir}/${bastion_installation_scripts_dir}/certs
+export BUNDLE_DIR=${bastion_working_dir}/${bastion_bundle_extraction_dir}/nkp-v${nkp_version}
+
+export REGISTRY_MIRROR_CACERT="$CERT_DIR/registry-server.crt" 
+export BUNDLE1="$BUNDLE_DIR/container-images/kommander-image-bundle-v${nkp_version}.tar"
+export BUNDLE2="$BUNDLE_DIR/container-images/konvoy-image-bundle-v${nkp_version}.tar"
+export BUNDLE3="$BUNDLE_DIR/container-images/nkp-release-specs-v${nkp_version}.tar"
+export BUNDLE4="$BUNDLE_DIR/container-images/nkp-ai-applications-catalog-image-bundle-${nkp_version_major}.tar"
+export BUNDLE5="$BUNDLE_DIR/container-images/nkp-nutanix-product-catalog-image-bundle-${nkp_version_major}.tar"
+
+echo "Pushing bundles to registry..."
+nkp push bundle \
+  --bundle "$BUNDLE1" \
+  --bundle "$BUNDLE2" \
+  --bundle "$BUNDLE3" \
+  --bundle "$BUNDLE4" \
+  --bundle "$BUNDLE5" \
+  --to-registry=$REGISTRY_MIRROR_URL \
+  --to-registry-username=$REGISTRY_MIRROR_USERNAME \
+  --to-registry-password=$REGISTRY_MIRROR_PASSWORD \
+  --to-registry-ca-cert-file=$REGISTRY_MIRROR_CACERT
+
+echo "Phase 1 Complete! Moving to Phase 2..."
+
+# ==========================================
+# PHASE 2: CLUSTER SETUP
+# ==========================================
+echo "Starting Phase 2: Cluster Setup..."
+cd ${bastion_working_dir}/${bastion_installation_scripts_dir}/${bastion_env}
+
+export IP_PREFIX="${dhcp_prefix}"
+export PE_CLUSTER="${cluster_name}"
+export PC_PASSWD="${nutanix_password}"
+
+rm -f mgmt.sh dev.sh gpu.sh
+cp prepare-scripts.sh_template prepare-scripts.sh
+
+sed -i'' -e "s/_PCIP_/$IP_PREFIX.7/g" prepare-scripts.sh
+sed -i'' -e "s|_PCPASSWORD_|$PC_PASSWD|g" prepare-scripts.sh
+sed -i'' -e "s/_NKPSUBNET_/secondary-$PE_CLUSTER/g" prepare-scripts.sh
+sed -i'' -e "s/_PCPROJECT_/${project_name}/g" prepare-scripts.sh
+sed -i'' -e "s/_CLUSTERNAME_/$PE_CLUSTER/g" prepare-scripts.sh
+sed -i'' -e "s/_NTNXSTORAGECONT_/default/g" prepare-scripts.sh
+sed -i'' -e "s|_REGISTRY_MIRROR_URL_|$REGISTRY_MIRROR_URL|g" prepare-scripts.sh
+sed -i'' -e "s|_REGISTRY_URL_|$REGISTRY_URL|g" prepare-scripts.sh
+sed -i'' -e "s|_REGMIRRORPWD_|${private_registry_token}|g" prepare-scripts.sh
+sed -i'' -e "s|_NKP_VERSION_|${nkp_version}|g" prepare-scripts.sh
+sed -i'' -e "s|_BASTION_BUNDLE_EXTRACTION_DIR_|${bastion_bundle_extraction_dir}|g" prepare-scripts.sh
+sed -i'' -e "s|_BASTION_WORKING_DIR_|${bastion_working_dir}|g" prepare-scripts.sh
+sed -i'' -e "s|_BASTION_INSTALLATION_SCRIPTS_DIR_|${bastion_installation_scripts_dir}|g" prepare-scripts.sh
+sed -i'' -e "s/_MGMT_CLUSTER_NAME_/${nkp_mgmt_cluster_name}/g" prepare-scripts.sh
+sed -i'' -e "s/_MGMT_CPIP_/$IP_PREFIX.150/g" prepare-scripts.sh
+sed -i'' -e "s/_MGMT_RANGEIP_/$IP_PREFIX.151-$IP_PREFIX.154/g" prepare-scripts.sh
+sed -i'' -e "s/_MGMT_IMAGENAME_/${nkp_ubuntu_image_name}/g" prepare-scripts.sh
+
+sed -i'' -e "s/_DEV1_CLUSTER_NAME_/dev-cluster1/g" prepare-scripts.sh
+sed -i'' -e "s/_DEV1_CPIP_/$IP_PREFIX.155/g" prepare-scripts.sh
+sed -i'' -e "s/_DEV1_RANGEIP_/$IP_PREFIX.156-$IP_PREFIX.159/g" prepare-scripts.sh
+sed -i'' -e "s/_DEV1_IMAGENAME_/${nkp_ubuntu_image_name}/g" prepare-scripts.sh
+sed -i'' -e "s/_DEV1_WORKSPACE_/${nkp_workspace_namespace}/g" prepare-scripts.sh
+
+sed -i'' -e "s/_GPU1_CLUSTER_NAME_/gpu-cluster1/g" prepare-scripts.sh
+sed -i'' -e "s/_GPU1_CPIP_/$IP_PREFIX.170/g" prepare-scripts.sh
+sed -i'' -e "s/_GPU1_RANGEIP_/$IP_PREFIX.171-$IP_PREFIX.174/g" prepare-scripts.sh
+
+export GPU_IMAGE=temp
+sed -i'' -e "s/_GPU1_IMAGENAME_/$GPU_IMAGE/g" prepare-scripts.sh
+sed -i'' -e "s/_GPU1_WORKSPACE_/${nkp_workspace_namespace}/g" prepare-scripts.sh
+
+./prepare-scripts.sh
+## TODO move this to a gitops pipeline
+
+if [ "${run_mgmt_script}" = "true" ]; then
+  echo "Terraform flag is true. Starting mgmt.sh..."
+  ./mgmt.sh
+  
+  echo "Cluster deployment finished. Applying license..."
+  export KUBECONFIG=${bastion_working_dir}/${bastion_installation_scripts_dir}/${bastion_env}/${nkp_mgmt_cluster_name}.conf
+  JWT="${nkp_license_jwt}"
+  
+  kubectl create secret generic ult-license-secret --from-literal=nutanix-license-key="$(echo $JWT)" -n kommander
+  kubectl label secret ult-license-secret kommanderType=license -n kommander
+  
+  kubectl patch license nutanix-license \
+    -n kommander \
+    --type=merge \
+    -p '{"spec":{"nutanixLicenseRef":{"name":"ult-license-secret"}}}'
+    
+  echo "License applied successfully!"
+  
+  nkp create workspace ${nkp_workspace_name} -n ${nkp_workspace_namespace}
+  echo "created workspace ${nkp_workspace_name} with namespace ${nkp_workspace_namespace}"
+
+  kubectl config view --merge --flatten > ${bastion_working_dir}/.kube/config
+  echo "Kubeconfig updated at ${bastion_working_dir}/.kube/config"
+
+  ## in HPOC setup AD as IDP
+  kubectl -n kommander create secret generic connector-ldap-bindsecret \
+  --from-literal=password="${ad_bind_password}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+  # applying ldap config and create groups
+  # ensure files are checking in to nkp repo
+  kubectl apply -f nkp-rbac-ldapgroups.yaml 
+  kubectl apply -f nkp-ldap-connector.yaml
+
+else
+  echo "Terraform flag is false. Skipping mgmt.sh execution."
+fi
+
+echo "Full Setup Complete!"

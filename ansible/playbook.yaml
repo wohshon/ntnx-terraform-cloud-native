@@ -1,0 +1,108 @@
+---
+- name: win_ping module Playbook
+  hosts: win
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Test connection
+      ansible.windows.win_ping:
+
+- name: Add Registry DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Add A record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordA -Name "registry" -ZoneName "ntnxlab.local" -AllowUpdateAny -IPv4Address "{{registry_ip}}"
+  - name: Add Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordPtr -Name "registry" -ZoneName "{{registry_ptr}}.in-addr.arpa" -AllowUpdateAny -PtrDomainName "registry.ntnxlab.local"
+  tags: 
+    - add_registry_dns
+
+- name: Add Bastion DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Add A record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordA -Name "bastion" -ZoneName "ntnxlab.local" -AllowUpdateAny -IPv4Address "{{bastion_ip}}"
+  - name: Add Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordPtr -Name "bastion" -ZoneName "{{bastion_ptr}}.in-addr.arpa" -AllowUpdateAny -PtrDomainName "bastion.ntnxlab.local"
+  tags: 
+    - add_bastion_dns
+
+- name: Add Gitlab DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Add A record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordA -Name "gitlab" -ZoneName "ntnxlab.local" -AllowUpdateAny -IPv4Address "{{gitlab_ip}}"
+  - name: Add Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Add-DnsServerResourceRecordPtr -Name "gitlab" -ZoneName "{{gitlab_ptr}}.in-addr.arpa" -AllowUpdateAny -PtrDomainName "gitlab.ntnxlab.local"
+  tags: 
+    - add_gitlab_dns
+
+- name: Remove Registry DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Remove A record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "ntnxlab.local" -RRType "A" -Name "registry" -RecordData "{{registry_ip}}" -Force
+
+  - name: Remove Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "{{registry_ptr}}.in-addr.arpa" -RRType "Ptr" -Name "registry" -RecordData "registry.ntnxlab.local" -Force
+  tags: 
+    - remove_registry_dns
+
+
+- name: Remove Bastion DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Remove A record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "ntnxlab.local" -RRType "A" -Name "bastion" -RecordData "{{bastion_ip}}" -Force
+
+  - name: Remove Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "{{bastion_ptr}}.in-addr.arpa" -RRType "Ptr" -Name "bastion" -RecordData "bastion.ntnxlab.local" -Force
+  tags: 
+    - remove_bastion_dns
+
+- name: Remove Gitlab DNS records
+  hosts: win
+  become: false
+  gather_facts: false  
+  tasks:
+  - name: Remove A record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "ntnxlab.local" -RRType "A" -Name "gitlab" -RecordData "{{gitlab_ip}}" -Force
+
+  - name: Remove Ptr record
+    ansible.windows.win_powershell:
+      script: |
+        Remove-DnsServerResourceRecord -ZoneName "{{gitlab_ptr}}.in-addr.arpa" -RRType "Ptr" -Name "gitlab" -RecordData "gitlab.ntnxlab.local" -Force
+  tags: 
+    - remove_gitlab_dns

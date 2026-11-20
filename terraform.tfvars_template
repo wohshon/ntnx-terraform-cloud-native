@@ -1,0 +1,91 @@
+nutanix_user     = "_NUTANIX_USER_"
+nutanix_password = "_NUTANIX_PASSWORD_"
+nutanix_endpoint = "_PC_ENDPOINT_"
+cluster_name     = "_PE_CLUSTER_NAME_"
+subnet_name      = "_PRIMARY_SUBNET_NAME_"
+bastion_ip       = "_BASTION_IP_"
+registry_ip      = "_REGISTRY_IP_"
+gitlab_ip        = "_GITLAB_IP_"
+
+# generic ssh user for bastion
+bastion_user    ="_VM_USER_"
+
+ad_ip        = "_AD_ENDPOINT_"
+ad_password  = "_NUTANIX_PASSWORD_"
+ad_user      = "_AD_USER_"
+bastion_ptr  = "_BASTION_PTR_"
+gitlab_ptr   = "_GITLAB_PTR_"
+registry_ptr = "_REGISTRY_PTR_"
+
+
+# --- SSH Target Machine Variables ---
+# The IP address of the Nutanix CVM you want to SSH into
+cvm_ip       = "_CVM_ENDPOINT_" # 37
+cvm_user     = "_CVM_USER_"
+cvm_password = "_CVM_PASSWORD_"
+
+# --- DHCP Pool Configuration Variables ---
+dhcp_network = "_SECONDARY_SUBNET_NAME_"
+dhcp_prefix  = "_DHCP_SUBNET_PREFIX_"
+
+# this is almost the standard for HPOC multi node for secondary network
+# The last octet of the IP to DELETE from the DHCP pool ($PREFIX.$IP0)
+dhcp_ip0 = "134"
+
+# The last octets for the FIRST new DHCP pool range ($PREFIX.$START_IP1 to $PREFIX.$END_IP1)
+dhcp_start_ip1 = "134"
+dhcp_end_ip1   = "149"
+
+# The last octets for the SECOND new DHCP pool range ($PREFIX.$START_IP2 to $PREFIX.$END_IP2)
+dhcp_start_ip2 = "180"
+dhcp_end_ip2   = "253"
+
+# NKP PREREQ VARIABLES on BASTION
+
+private_registry_url             ="_PRIVATE_REGISTRY_URL_"
+private_registry_name            ="_PRIVATE_REGISTRY_NAME_"
+private_registry_user            ="_PRIVATE_REGISTRY_USER_"
+private_registry_token           ="_PRIVATE_REGISTRY_TOKEN_"
+bastion_working_dir              = "_NKP_BASTION_WORKING_DIR_"
+bastion_bundle_name              = "_NKP_BASTION_BUNDLE_NAME_"
+bastion_bundle_extraction_dir    = "_NKP_BASTION_BUNDLE_EXTRACTION_DIR_"
+bastion_installation_scripts_dir = "_NKP_INSTALLATION_GIT_REPO_DIR_"
+bastion_git_endpoint             = "_NKP_INSTALLATION_GIT_REPO_URL_"
+bastion_git_branch               = "_NKP_INSTALLATION_GIT_REPO_BRANCH_"
+nkp_version                      = "_NKP_VERSION_BUILD_._NKP_VERSION_PATCH_"
+# our product is not consistent with versioning convention, this is a hack for a product names 2.19 (without patch version)
+nkp_version_major                = "_NKP_VERSION_BUILD_"
+bastion_env                      = "hpoc"
+bastion_bundle_download_url      = "_HOSTING_URL_/_NKP_HOSTING_PATH_"
+slack_webhook_url                = "https://hooks.slack.com/triggers/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"
+run_mgmt_script                  = _INSTALL_NKP_MGMT_CLUSTER_
+# terraform apply -var="deploy_gitlab=true" if need to run later
+deploy_gitlab                   = _DEPLOY_GITLAB_
+deploy_nai 			            = _DEPLOY_NAI_
+nkp_license_jwt                 = "_NKP_LICENSE_JWT_"
+nkp_mgmt_cluster_name           = "_NKP_MGMT_CLUSTER_NAME_"
+
+nkp_workspace_name              = "_NKP_WORKSPACE_NAME_"
+nkp_workspace_namespace         = "_NKP_WORKSPACE_NAMESPACE_"
+ad_bind_password                = "_NKP_AD_BIND_PASSWORD_"
+# both are for 2.19, one more secured
+nkp_ubuntu_image_name           = "nkp-ubuntu-24.04-release-cis-1.36.2-20261014170313.qcow2"
+nkp_ubuntu_image_download_url="_HOSTING_URL_/_NKP_UBUNTU_IMAGE_DOWNLOAD_URL_PATH_/_NKP_UBUNTU_IMAGE_NAME_"
+# with STIG FIPS
+# nkp_ubuntu_image_name           = "nkp-ubuntu-22.04-release-cis-stig-fips-gpu-1.36.2-20261015003556.qcow2"
+# nkp_ubuntu_image_download_url   = "_HOSTING_URL_/users/wohshon/nkp_219/nkp-ubuntu-22.04-release-cis-stig-fips-gpu-1.36.2-20261015003556.qcow2"
+bastion_ubuntu_image_name           = "_PACKER_VM_SOURCE_IMAGE_"
+bastion_ubuntu_image_download_url   = "_HOSTING_URL_/_OS_DOWNLOAD_PATH_/_PACKER_VM_SOURCE_IMAGE_"
+
+
+# --- NAI Setup Variables ---
+nai_bundle_name               ="_NAI_BUNDLE_NAME_"
+nai_helm_chart_tar               ="_NAI_HELM_CHART_NAME_"
+nai_bundle_download_url         = "_HOSTING_URL_/_NAI_BUNDLE_DOWNLOAD_URL_/_NAI_BUNDLE_NAME_"
+nai_helm_chart_download_url     = "_HOSTING_URL_/_NAI_BUNDLE_DOWNLOAD_URL_/_NAI_HELM_CHART_NAME_"
+
+
+project_name = "_PROJECT_NAME_"
+# DO NOT SHARE PRIMARY NOW, YOU CANNOT UNSHARE WITHOUT DELETING
+# vlan_names   = ["_PRIMARY_SUBNET_NAME_", "_SECONDARY_SUBNET_NAME_"]
+vlan_names   = ["_SECONDARY_SUBNET_NAME_"]

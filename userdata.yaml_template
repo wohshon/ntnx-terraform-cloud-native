@@ -1,0 +1,20 @@
+#cloud-config
+user-data:
+  timezone: Asia/Singapore
+
+# 1. Ensure the user exists and is in the docker group
+users:
+  - name: _VM_USER_
+    groups: docker
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+  
+    # Ensure docker is running
+  - systemctl enable docker
+  - systemctl start docker
+
+  # Login to first registry
+  - su - _VM_USER_ -c "echo '_DOCKERIO_TOKEN_' | docker login _DOCKERIO_URL_ -u _DOCKER_USER_ --password-stdin"
+
+  # Login to second registry
+  - su - _VM_USER_ -c "echo '_PRIVATE_REGISTRY_TOKEN_' | docker login _PRIVATE_REGISTRY_URL_ -u _PRIVATE_REGISTRY_USER_ --password-stdin"

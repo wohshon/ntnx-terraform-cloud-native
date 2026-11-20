@@ -1,0 +1,9 @@
+variable "ad_server_ip" {}
+variable "ad_user" {}
+variable "ad_password" {}
+variable "bastion_ip" {}
+variable "registry_ip" {}
+variable "gitlab_ip" {}
+variable "bastion_ptr" {}
+variable "registry_ptr" {}
+variable "gitlab_ptr" {}

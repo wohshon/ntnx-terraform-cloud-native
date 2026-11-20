@@ -1,0 +1,12 @@
+nutanix_port = 9440
+nutanix_endpoint = "_PC_ENDPOINT_"        # Your Prism Central IP
+nutanix_username = "_NUTANIX_USER_"           # Your Nutanix username
+nutanix_password = "_NUTANIX_PASSWORD_"   # Your Nutanix password
+nutanix_cluster     = "_PE_CLUSTER_NAME_"
+nutanix_subnet      = "_PRIMARY_SUBNET_NAME_"       # The network the VM will use
+source_image     = "_PACKER_VM_SOURCE_IMAGE_" 
+# for identifying path name to download bundles
+# remote file server uses version number to identify bundle locations
+nkp_version     = "_NKP_VERSION_BUILD_._NKP_VERSION_PATCH_"
+nkp_dir_version = "_PACKER_NKP_VERSION_FOR_PATH_"
+nkp_download_path = "_PACKER_NKP_DOWNLOAD_PATH_"
