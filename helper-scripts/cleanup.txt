@@ -1,0 +1,28 @@
+  source ./env/.sensitive.env
+  source ./env/environment.env
+  PC_IP="${PRIMARY_SUBNET_PREFIX}.7"
+
+  echo "1. Deleting leftover 'lab' project..."
+  PROJECT_UUID=$(curl -sk -u "${NUTANIX_USER}:${NUTANIX_PASSWORD}" -X POST \
+    -H "Content-Type: application/json" -d '{"kind":"project"}' \
+    "https://${PC_IP}:9440/api/nutanix/v3/projects/list" \
+    | jq -r '.entities[] | select(.spec.name=="lab") | .metadata.uuid')
+
+  if [ -n "$PROJECT_UUID" ]; then
+    curl -sk -u "${NUTANIX_USER}:${NUTANIX_PASSWORD}" -X DELETE "https://${PC_IP}:9440/api/nutanix/v3/projects/$PROJECT_UUID"
+    echo "Deleted project lab."
+  fi
+
+  echo "2. Deleting leftover AD User Groups..."
+  curl -sk -u "${NUTANIX_USER}:${NUTANIX_PASSWORD}" -X POST \
+    -H "Content-Type: application/json" -d '{"kind":"user_group"}' \
+    "https://${PC_IP}:9440/api/nutanix/v3/user_groups/list" \
+    | jq -r '.entities[] | select(.spec.resources.user_group_type=="DIRECTORY_SERVICE") | .metadata.uuid' \
+    | while read -r UG_UUID; do
+      if [ -n "$UG_UUID" ]; then
+        curl -sk -u "${NUTANIX_USER}:${NUTANIX_PASSWORD}" -X DELETE "https://${PC_IP}:9440/api/nutanix/v3/user_groups/$UG_UUID"
+        echo "Deleted AD Group $UG_UUID."
+      fi
+  done
+
+
