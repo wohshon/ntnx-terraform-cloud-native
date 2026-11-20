@@ -1,33 +1,67 @@
-# clean up user groups under iam 
-(
-  # FILL THESE THREE IN:
-  PC_IP="YOUR_PRISM_CENTRAL_IP"
-  PC_USER="YOUR_USERNAME"
-  PC_PASS="YOUR_PASSWORD"
+read -r -p "Prism Central FQDN or IP: " PC
+read -r -p "Prism Central username: " USER
+read -r -s -p "Password: " PASS
+echo
 
-  BASE_URL="https://${PC_IP}:9440/api/nutanix/v3"
+PC="${PC#https://}"
+PC="${PC#http://}"
+PC="${PC%/}"
+API="https://${PC}:9440/api/iam/v4.0/authn/user-groups"
 
-  echo "1. Forcing deletion of AD Group: administrators..."
-  ADMIN_UUID=$(curl -sk -u "${PC_USER}:${PC_PASS}" -X POST -H "Content-Type: application/json" \
-    -d '{"kind":"user_group"}' "$BASE_URL/user_groups/list" \
-    | jq -r '.entities[]? | select(.spec.resources.directory_service_user_group.distinguished_name == "cn=administrators,cn=builtin,dc=ntnxlab,dc=local") | .metadata.uuid')
-  
-  if [ -n "$ADMIN_UUID" ]; then
-    curl -sk -u "${PC_USER}:${PC_PASS}" -X DELETE "$BASE_URL/user_groups/$ADMIN_UUID"
-    echo " -> Deleted administrators group (UUID: $ADMIN_UUID)."
-  else
-    echo " -> Not found in API."
-  fi
+for GROUP in administrators users; do
+    JSON=$(curl -skS -u "$USER:$PASS" --get \
+      --data-urlencode "\$filter=name eq '$GROUP'" "$API")
 
-  echo "2. Forcing deletion of AD Group: users..."
-  USER_UUID=$(curl -sk -u "${PC_USER}:${PC_PASS}" -X POST -H "Content-Type: application/json" \
-    -d '{"kind":"user_group"}' "$BASE_URL/user_groups/list" \
-    | jq -r '.entities[]? | select(.spec.resources.directory_service_user_group.distinguished_name == "cn=users,cn=builtin,dc=ntnxlab,dc=local") | .metadata.uuid')
-  
-  if [ -n "$USER_UUID" ]; then
-    curl -sk -u "${PC_USER}:${PC_PASS}" -X DELETE "$BASE_URL/user_groups/$USER_UUID"
-    echo " -> Deleted users group (UUID: $USER_UUID)."
-  else
-    echo " -> Not found in API."
-  fi
-)
+    ID=$(printf '%s' "$JSON" | tr -d '\r\n' |
+      sed -n 's/.*"extId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+    if [ -z "$ID" ]; then
+        echo "Group not found: $GROUP"
+        continue
+    fi
+
+    HEADER=$(mktemp)
+
+    curl -skS -u "$USER:$PASS" \
+      -D "$HEADER" -o /dev/null "$API/$ID"
+
+    ETAG=$(awk 'BEGIN{IGNORECASE=1}
+      /^etag:/ {
+        sub(/\r$/, "")
+        sub(/^[^:]*:[[:space:]]*/, "")
+        print
+        exit
+      }' "$HEADER")
+
+    rm -f "$HEADER"
+
+    if [ -z "$ETAG" ]; then
+        echo "Could not retrieve ETag for $GROUP"
+        exit 1
+    fi
+
+    echo "Found $GROUP — ETag retrieved."
+    read -r -p "Delete $GROUP? Type DELETE: " CONFIRM
+
+    if [ "$CONFIRM" = "DELETE" ]; then
+        RESULT=$(mktemp)
+
+        STATUS=$(curl -skS -u "$USER:$PASS" -X DELETE \
+          -H "If-Match: $ETAG" \
+          -H "Ntnx-Request-Id: $(date +%s)-$RANDOM" \
+          -w "%{http_code}" \
+          -o "$RESULT" \
+          "$API/$ID")
+
+        if [[ "$STATUS" == 2* ]]; then
+            echo "Removed: $GROUP"
+        else
+            echo "Failed: $GROUP — HTTP $STATUS"
+            cat "$RESULT"
+        fi
+
+        rm -f "$RESULT"
+    else
+        echo "Skipped: $GROUP"
+    fi
+done
