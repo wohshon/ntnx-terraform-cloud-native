@@ -12,7 +12,11 @@ data "nutanix_storage_containers_v2" "all" {}
 locals {
   valid_container_ids = [
     for sc in data.nutanix_storage_containers_v2.all.storage_containers : sc.ext_id
-    if sc.cluster_ext_id == var.cluster_id && sc.name != "NutanixManagementShare"
+    if sc.cluster_ext_id == var.cluster_id
+    && !startswith(sc.name, "Nutanix")
+    && !startswith(sc.name, "msp-")
+    && !startswith(sc.name, "objects")
+    && sc.name != "SelfServiceContainer"
   ]
 }
 
