@@ -1,7 +1,7 @@
 resource "terraform_data" "bastion_ad_config" {
   provisioner "local-exec" {
     command = <<EOT
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${var.bastion_user}@${var.bastion_ip} << 'EOF'
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null wohshon@${var.bastion_ip} << 'EOF'
 set -e
 
 echo "Installing Ansible and WinRM dependencies..."
@@ -29,10 +29,10 @@ INVENTORY
 echo "Generating dynamic vars file from Terraform map..."
 cat << 'VARS_YML' > ${var.bastion_working_dir}/ad_vars.yml
 ${yamlencode({
-    ad_groups = {
-      for group_name, config in var.nkp_ad_groups :
-      group_name => concat(coalesce(config.users, []), coalesce(config.groups, []))
-    }
+  ad_groups = {
+    for group_name, config in var.nkp_ad_groups :
+    group_name => concat(coalesce(config.users, []), coalesce(config.groups, []))
+  }
 })}
 VARS_YML
 
@@ -78,5 +78,5 @@ ansible-playbook -i ${var.bastion_working_dir}/ad_inventory.ini ${var.bastion_wo
 echo "Active Directory configuration complete!"
 EOF
 EOT
-}
+  }
 }
