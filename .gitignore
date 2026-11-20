@@ -8,7 +8,9 @@
 
 # Sensitive environment, keys, and plans
 env/.sensitive.env
-keys/**
+keys/bastion/ssh/**
+keys/gitlab/ssh/**
+keys/registry/ssh/**
 plans/**
 
 # Variable and override files (including nested directories)
