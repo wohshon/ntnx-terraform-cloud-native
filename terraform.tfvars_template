@@ -67,7 +67,7 @@ nkp_mgmt_cluster_name           = "_NKP_MGMT_CLUSTER_NAME_"
 
 nkp_workspace_name              = "_NKP_WORKSPACE_NAME_"
 nkp_workspace_namespace         = "_NKP_WORKSPACE_NAMESPACE_"
-ad_bind_password                = "_NKP_AD_BIND_PASSWORD_"
+ad_bind_password                = "_AD_BIND_PASSWORD_"
 # both are for 2.19, one more secured
 nkp_ubuntu_image_name           = "nkp-ubuntu-24.04-release-cis-1.36.2-20261014170313.qcow2"
 nkp_ubuntu_image_download_url="_HOSTING_URL_/_NKP_UBUNTU_IMAGE_DOWNLOAD_URL_PATH_/_NKP_UBUNTU_IMAGE_NAME_"
