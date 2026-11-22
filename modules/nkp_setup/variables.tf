@@ -56,3 +56,7 @@ variable "ad_bind_password" {
   type      = string
   sensitive = true
 }
+
+variable "ad_ip" {
+  type      = string
+}

@@ -150,6 +150,8 @@ if [ "${run_mgmt_script}" = "true" ]; then
 
   # applying ldap config and create groups
   # ensure files are checking in to nkp repo
+  
+  sed -e "s|_AD_IP_|${ad_ip}|g" nkp-ldap-connector.yaml > nkp-ldap-connector.yaml.tmp && mv nkp-ldap-connector.yaml.tmp nkp-ldap-connector.yaml
   kubectl apply -f nkp-rbac-ldapgroups.yaml 
   kubectl apply -f nkp-ldap-connector.yaml
 

@@ -186,6 +186,7 @@ module "nkp_setup" {
   private_registry_token           = var.private_registry_token
   project_name                     = var.project_name
   ad_bind_password                 = var.ad_bind_password
+  ad_ip                            = var.ad_ip
 
 }
 

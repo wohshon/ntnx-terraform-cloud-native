@@ -27,6 +27,7 @@ locals {
     nkp_license_jwt                  = var.nkp_license_jwt
     project_name                     = var.project_name
     ad_bind_password                 = var.ad_bind_password
+    ad_ip                            = var.ad_ip
   })
 }
 
