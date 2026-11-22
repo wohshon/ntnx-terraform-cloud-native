@@ -54,6 +54,7 @@ export BUNDLE2="$BUNDLE_DIR/container-images/konvoy-image-bundle-v${nkp_version}
 export BUNDLE3="$BUNDLE_DIR/container-images/nkp-release-specs-v${nkp_version}.tar"
 export BUNDLE4="$BUNDLE_DIR/container-images/nkp-ai-applications-catalog-image-bundle-${nkp_version_major}.tar"
 export BUNDLE5="$BUNDLE_DIR/container-images/nkp-nutanix-product-catalog-image-bundle-${nkp_version_major}.tar"
+export BUNDLE6="$BUNDLE_DIR/container-images/kubernetes-os-ubuntu-24.04-nkp-v2.19.0-v1.36.2_linux_amd64.tar"
 
 echo "Pushing bundles to registry..."
 nkp push bundle \
@@ -62,6 +63,7 @@ nkp push bundle \
   --bundle "$BUNDLE3" \
   --bundle "$BUNDLE4" \
   --bundle "$BUNDLE5" \
+  --bundle "$BUNDLE6" \
   --to-registry=$REGISTRY_MIRROR_URL \
   --to-registry-username=$REGISTRY_MIRROR_USERNAME \
   --to-registry-password=$REGISTRY_MIRROR_PASSWORD \
