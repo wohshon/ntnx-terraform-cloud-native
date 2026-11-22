@@ -24,6 +24,9 @@ ${templatefile("${path.module}/nai_prep.sh.tftpl", {
     private_registry_token           = var.private_registry_token
     nai_bundle_name                  = var.nai_bundle_name
     nai_helm_chart_tar               = var.nai_helm_chart_tar
+    nai_worker_node_count            = var.nai_worker_node_count
+    nai_vcpu_count                   = var.nai_vcpu_count
+    nai_memory_size                  = var.nai_memory_size
 })}
 BACKGROUND_NAI_PREP
 EOF

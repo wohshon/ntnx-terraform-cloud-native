@@ -91,3 +91,18 @@ variable "nai_helm_chart_tar" {
   type        = string
   description = "The name of the NAI Helm chart archive"
 }
+
+
+variable "nai_vcpu_count" {
+  type        = string
+  description = "vcpu count"
+}
+
+variable "nai_memory_size" {
+  type        = string
+  description = "memory size"
+}
+variable "nai_worker_node_count" {
+  type        = string
+  description = "number of replicas nai "
+}

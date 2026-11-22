@@ -1,13 +1,21 @@
 #!/bin/bash
 set -e
 
-# load variables
+# load variables , commonly used ones are here except sensitive ones
+export PE_CLUSTER_NAME="RNO-SPOC007-3"
+export PRIMARY_SUBNET_PREFIX="10.8.50"
+# run mgmt.sh?
+export INSTALL_NKP_MGMT_CLUSTER=true
+export DEPLOY_NAI=true
+export DEPLOY_GITLAB=true
 # clean up current state and workspace if true
-export DESTRUCTIVE_MODE=false
-export APPLY_TERRAFORM=false
+export DESTRUCTIVE_MODE=true
+export APPLY_TERRAFORM=true
 source ./env/.sensitive.env
 source ./env/environment.env
+# variable for the vms like bastion etc
 source ./env/vm-setup.env
+# for NKP and NAI related variables
 source ./env/install.env
 # verification
 export PTR=$(echo "$PRIMARY_SUBNET_PREFIX" | awk -F. '{ print $3 "." $2 "." $1 }')
@@ -222,6 +230,9 @@ for FILE in "${TARGET_FILES[@]}"; do
             -e "s|_NAI_BUNDLE_DOWNLOAD_URL_|${NAI_BUNDLE_DOWNLOAD_URL}|g" \
             -e "s|_NAI_BUNDLE_NAME_|${NAI_BUNDLE_NAME}|g" \
             -e "s|_NAI_HELM_CHART_NAME_|${NAI_HELM_CHART_NAME}|g" \
+            -e "s|_NAI_WORKER_NODE_COUNT_|${NAI_WORKER_NODE_COUNT}|g" \
+            -e "s|_NAI_VCPU_COUNT_|${NAI_VCPU_COUNT}|g" \
+            -e "s|_NAI_MEMORY_SIZE_|${NAI_MEMORY_SIZE}|g" \
             -e "s|_PROJECT_NAME_|${PROJECT_NAME}|g" \
             -e "s|_SELF_SERVICE_STORAGE_CONTAINER_NAME_|${SELF_SERVICE_STORAGE_CONTAINER_NAME}|g" \
              "$FILE" > "$FILE.tmp" && mv "$FILE.tmp" "$FILE"

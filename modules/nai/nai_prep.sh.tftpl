@@ -112,10 +112,10 @@ exec > ${bastion_working_dir}/nai_prep.log 2>&1
     --name nai-cluster1 \
     --cp-ip ${dhcp_prefix}.160 \
     --lb-range ${dhcp_prefix}.161-${dhcp_prefix}.164 \
-    --workers 4 \
-    --vcpus 48 \
+    --workers ${nai_worker_node_count} \
+    --vcpus ${nai_vcpu_count} \
     --disk 150 \
-    --memory 64
+    --memory ${nai_memory_size}
 
   if [ ! -f "nai-cluster1.sh" ]; then
     echo "ERROR: nai-cluster1.sh was not generated!"

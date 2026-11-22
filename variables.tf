@@ -274,6 +274,24 @@ variable "nai_helm_chart_tar" {
   description = "The name of the NAI Helm chart archive"
 }
 
+variable "nai_vcpu_count" {
+  type        = string
+  description = "nai vcpus count"
+  default     = "48"
+}
+
+variable "nai_memory_size" {
+  type        = string
+  description = "nai ram size"
+  default     = "64"
+}
+
+variable "nai_worker_node_count" {
+  type        = string
+  description = "nai worker nodes replicas count"
+  default     = "4"
+}
+
 variable "deploy_nai" {
   type        = bool
   description = "Set to true to deploy the NAI background preparation task."

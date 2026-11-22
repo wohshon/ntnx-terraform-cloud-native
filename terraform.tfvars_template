@@ -83,7 +83,7 @@ nai_bundle_name               ="_NAI_BUNDLE_NAME_"
 nai_helm_chart_tar               ="_NAI_HELM_CHART_NAME_"
 nai_bundle_download_url         = "_HOSTING_URL_/_NAI_BUNDLE_DOWNLOAD_URL_/_NAI_BUNDLE_NAME_"
 nai_helm_chart_download_url     = "_HOSTING_URL_/_NAI_BUNDLE_DOWNLOAD_URL_/_NAI_HELM_CHART_NAME_"
-
+nai_worker_node_count           = "_NAI_WORKER_NODE_COUNT_"
 
 project_name = "_PROJECT_NAME_"
 # DO NOT SHARE PRIMARY NOW, YOU CANNOT UNSHARE WITHOUT DELETING

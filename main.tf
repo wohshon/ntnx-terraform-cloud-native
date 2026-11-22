@@ -230,6 +230,9 @@ module "nai_setup" {
   private_registry_name            = var.private_registry_name
   private_registry_user            = var.private_registry_user
   private_registry_token           = var.private_registry_token
+  nai_worker_node_count            = var.nai_worker_node_count
+  nai_vcpu_count                   = var.nai_vcpu_count
+  nai_memory_size                  = var.nai_memory_size
 
   depends_on = [
     module.bastion_vm,
