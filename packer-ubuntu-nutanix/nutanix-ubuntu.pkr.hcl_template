@@ -198,7 +198,7 @@ provisioner "shell" {
       "export DEBIAN_FRONTEND=noninteractive",
       "sudo apt-get update",
       "sudo apt-get upgrade -y",
-      "sudo apt-get install -y git curl wget gpg bash-completion ca-certificates",
+      "sudo apt-get install -y git curl wget gpg bash-completion ca-certificates sshpass cifs-util python3-venv python3-pip",
       "sudo install -m 0755 -d /etc/apt/keyrings",
       "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes",
       "source /etc/os-release",
